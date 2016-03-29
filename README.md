@@ -1,3 +1,12 @@
+由于公司要上redis cluster，但对于安全性要求较高，需要密码验证，此时codis2.x 并没有支持，3.0 支持，但3.0 各方面资料并不多，多方考虑，开始尝试redis cluster 。
+
+但此时redis cluster 原生自带的redis-trib.rb 经过测试，我是发现不支持密码验证，为此对于集群维护就显得相当麻烦，而redis 原生命令却能很好的支持redis cluster密码认证，包括集群复制。
+
+为此需一种自动管理节点数据迁移工具，所以利用perl编写自动化管理工具。
+
+但不是很完善，希望能给大家一个借鉴。
+
+
 由perl结合shell进行编写
 redis_cluster_data_move #程序名
 #auto Resharding all slot to set master : #自动分片槽位
