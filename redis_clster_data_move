@@ -1,0 +1,179 @@
+#!/usr/bin/perl
+use strict;
+use Getopt::Std;
+#config set
+my $pass='kevin';
+my $redis_port=`netstat -ntlp|grep redis-server|awk -F':' '{print \$2}'|awk '{print \$1}'|head -n 1`;
+chomp($redis_port);
+my $redis_cli='/usr/local/bin/redis-cli';
+my %options_ssh;
+my $source_host;
+my $target_host;
+my $sou_host;
+my $sou_port;
+my $tar_host;
+my $tar_port;
+my $start_slot;
+my $end_slot;
+getopts('t:h:p:s:d:r:n:',\%options_ssh);
+my $type=$options_ssh{'t'};
+my $source_id=$options_ssh{'s'};
+my $target_id=$options_ssh{'d'};
+my $host=$options_ssh{'h'};
+my $port=$options_ssh{'p'};
+my $range=$options_ssh{'r'};
+my $node=$options_ssh{'n'};
+chomp($type);
+chomp($source_id);
+chomp($target_id);
+chomp($host);
+chomp($port);
+chomp($range);
+chomp($node);
+my $pass='kevin';
+sub split_info{
+	if( $range =~ /-/img){
+		my @slots=split(/-/,$range);
+		$start_slot=defined($slots[0])?$slots[0]:0;
+		$end_slot=defined($slots[1])?$slots[1]:16383;
+	}else{
+		$start_slot=$range;
+		$end_slot=$range;
+	}
+	chomp($start_slot);
+	chomp($end_slot);
+        my @hosts=split(/-/,$host);
+         $source_host=$hosts[0];
+         $target_host=$hosts[1];
+        my @sou_info=split(/:/,$source_host);
+         $sou_host=$sou_info[0];
+         $sou_port=$sou_info[1];
+        my @target_info=split(/:/,$target_host);
+         $tar_host=$target_info[0];
+         $tar_port=$target_info[1];
+}
+sub add{
+	&split_info;
+	my $info= `redis-cli  -h $sou_host  -p $sou_port -a $pass cluster meet $tar_host $tar_port`;
+	print "redis-cli  -h $sou_host  -p $sou_port -a $pass cluster meet $tar_host $tar_port : $info \n";
+}
+sub del{
+	my $info=`redis-cli  -h $host  -p $port -a $pass CLUSTER FORGET $node`;
+	print "redis-cli  -h $host  -p $port -a $pass CLUSTER FORGET $node : $info \n";
+}
+sub add_slave{
+        my $info=`redis-cli  -h $host  -p $port -a $pass cluster replicate $node`;
+        print "redis-cli  -h $host  -p $port -a $pass cluster replicate $node : $info \n";
+}
+sub up_master{
+	
+	my $info = ` redis-cli  -h $host  -p $port -a $pass  CLUSTER FAILOVER `;
+	print "redis-cli  -h $host  -p $port -a $pass  CLUSTER FAILOVER  : $info";
+}
+#all slot to set 
+sub all_slot{
+	my $i=1;
+	my $en=16384;
+	my @nodes=`redis-cli -h $host -p $port -a $pass cluster nodes|grep master|awk '{print \$1}'`;
+	my $num=@nodes;
+	chomp($num);
+	my $n=int ($en/$num);
+	my $j=0;
+	foreach my $node (@nodes){
+		chomp($node);
+		my $set=$n*$i;
+		my @hosts=`$redis_cli -h $host -p $port -a $pass cluster nodes |grep master|awk '{print \$2}'`;
+		while ($j <= $set ){
+			foreach my $keys (@hosts){
+				my @hosts=split(/:/,$keys);
+				my $host=$hosts[0];
+				my $port=$hosts[1];
+				chomp($host);
+				chomp($port);
+				my $info=`$redis_cli -h $host -p $port  -a $pass CLUSTER SETSLOT $j NODE $node`;
+	                	print "auto Resharding : redis-cli -h $host -p $port -a $pass CLUSTER SETSLOT $j NODE $node : $info \n";
+			}
+			$j++;
+		}
+		#my $info=`$redis_cli -h 127.0.0.1 -p $redis_port  -a $pass CLUSTER SETSLOT 16383 NODE $node`;
+	        #print "auto Resharding : redis-cli -h 127.0.0.1 -p $redis_port  -a $pass CLUSTER SETSLOT 16383 NODE $node : $info \n";
+		$i++;
+	}
+}
+#move slot 
+sub move_slot{
+	&split_info;
+	while ( $start_slot <= $end_slot ){ 
+		my $info=`redis-cli -h $host -p $port  -a $pass CLUSTER SETSLOT $start_slot NODE $target_id`;
+		print "redis-cli -h $host -p $port -a $pass CLUSTER SETSLOT $start_slot NODE $target_id :$info\n";
+		$start_slot++;
+	
+	}
+}
+sub IMPORTING{
+	&split_info;
+        while ( $start_slot <= $end_slot ){
+                print "redis-cli -h $tar_host -p $tar_port -a $pass CLUSTER SETSLOT $start_slot IMPORTING $source_id\n";
+                `redis-cli -h $tar_host -p $tar_port -a $pass CLUSTER SETSLOT $start_slot IMPORTING $source_id`;
+                $start_slot++;
+      }
+}
+sub MIGRATING{
+	&split_info;
+        while ( $start_slot <= $end_slot ){
+                print "set $start_slot to $tar_host:$tar_port MIGRATING\n";
+                print "redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER SETSLOT $start_slot MIGRATING $target_id\n";
+                `redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER SETSLOT $start_slot MIGRATING $target_id`;
+                $start_slot++;
+       }
+}
+sub move_keys{
+	&split_info;
+        while ( $start_slot <= $end_slot ){
+                my $num=`redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER COUNTKEYSINSLOT $start_slot`;
+		chomp($num);
+		if($num ne '0'){
+ 			my @key=`redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER GETKEYSINSLOT $start_slot $num`;
+			print "redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER COUNTKEYSINSLOT $start_slot\n";
+			print "redis-cli -h $sou_host -p $sou_port -a $pass CLUSTER GETKEYSINSLOT $start_slot $num \n";
+			foreach my $k (@key){
+				chomp($k);
+				my $info=`echo "MIGRATE $tar_host $tar_port $k 0 1000"| redis-cli -h $sou_host -p $sou_port -a $pass`;
+				print "from $sou_host:$sou_port to $tar_host:$tar_port MIGRATE $tar_host $tar_port $k 0 1000 :$info\n ";
+			}
+		}else{
+			print "$sou_host:$sou_port key is null \n";
+		}
+		my $info=`redis-cli -h $tar_host -p $tar_port -a $pass CLUSTER SETSLOT $start_slot NODE $target_id`;
+		print "redis-cli -h $tar_host -p $tar_port -a $pass CLUSTER SETSLOT $start_slot NODE $target_id\n";
+	        $start_slot++;
+         }
+}
+if( $type eq 'ms' && defined($host) && defined($port) && defined($range) && defined($target_id) ){
+	&move_slot;
+}elsif($type eq 'md' && defined($host) && defined($range) && defined($source_id) && defined($target_id)){
+	&IMPORTING;
+	&MIGRATING;
+	&move_keys;
+}elsif($type eq 'reshard' && defined($host) && defined($port)){
+	&all_slot;
+}elsif($type eq 'add' &&  defined($host) ){
+	&add;
+}elsif( $type eq 'del' && defined($host) && defined($port) && defined($node)){
+	&del;
+}elsif($type eq 'add_slave' && defined($host) && defined($port) && defined($node)){
+	&add_slave;
+}elsif( $type eq 'up' &&  defined($host) && defined($port)){
+	&up_master;
+}else{
+	print "auto Resharding all slot to set master :\n";
+	print "$0 -t reshard -h host -p port\n";
+	print "move slot:\n";
+	print "$0 -t ms -h host -p port -d target_id -r 0-16383\n";
+	print "move data:\n";
+	print "$0 -t md -h source_host:port-target_host:port -s source_id -d target_id -r 0-16383\n";
+	print "del redis node:\n$0 -t del -h host -p port -n  node_id\n";
+	print "add redis node:\n$0 -t add -h source_host:source_port-target_host:target_port \n";
+	print "add redis slave node:\n$0 -t add_slave -h host -p port -n node_id \n";
+	print "update redis slave to master :\n$0 -u up  -h host -p port \n";
+}
