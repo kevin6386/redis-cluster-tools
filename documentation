@@ -1,9 +1,11 @@
-
+系统环境
+. . 安装Getopt::Std perl环境，根据自己系统环境可到官网进行下载安装http://search.cpan.org
 机器环境：
     172.16.10.218 ：7000 
     172.16.10.205 ：7005
 
 主要文件配置
+
 masterauth "kevin"
 requirepass "kevin"
 cluster-enabled yes
@@ -13,6 +15,7 @@ cluster-node-timeout 5000
 cluster-migration-barrier 2
 
 #集群测试
+
 在218 上启动redis cluster ，但是并没有slot：信息如下
 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected
 初始化slot分配所有的slot：
