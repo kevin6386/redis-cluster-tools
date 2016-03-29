@@ -6,7 +6,7 @@
 
 但不是很完善，希望能给大家一个借鉴。
 
-
+有perl结合shell进行编写
 redis_cluster_data_move #程序名
 #auto Resharding all slot to set master : #自动分片槽位
 ./redis_cluster_data_move -t reshard -h host -p port
