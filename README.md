@@ -1,5 +1,6 @@
 # redis_clster_data_move
 redis cluster 认证方式 管理工具
+
 redis_cluster_data_move #程序名
 
 auto Resharding all slot to set master : #自动分片槽位
