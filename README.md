@@ -62,5 +62,6 @@ del redis node:
 -r 槽位范围
 
 -n 节点id
+-P redis 密码
 
 
