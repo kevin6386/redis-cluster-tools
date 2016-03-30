@@ -1,6 +1,8 @@
-#目前redis 集群最火的是codis 和 redis cluster （官方）,但 codis 2.x 不支持密码。那么需要密码认证使用redis 集群的同学要仔细看了哦。
+目前redis 集群最火的是codis 和 redis cluster （官方）,但 codis 2.x 不支持密码。那么需要密码认证使用redis 集群的同学要仔细看了哦。
  
-#相信大家很多人已经使用了redis cluster，而且也肯定会用到核心应用，你是否考虑过如下问题？
+相信大家很多人已经使用了redis cluster，而且也肯定会用到核心应用，你是否考虑过如下问题？
+大标题  
+===================================
 1、redis cluster无密码，被改数据
 2、redis cluster无密码，被flushall (你是否有要哭的冲动哈哈)
 3、redis cluster无密码，数据在光天化日(你对用户不负责)
