@@ -27,26 +27,26 @@
 但不是很完善，希望能给大家一个借鉴。<br />  
 
 
-### 自动分片槽位<br />  
+### 自动分片<br />  
   auto Resharding all slot to set master : <br />  
   ./redis_cluster_data_move -t reshard -h host -p port -P redis 密码<br />  
 
-### 自动迁移槽位<br />  
+### 自动迁移分片<br />  
   move slot:移动slot，此时槽位为空，也就是当cluster down 时，快速将16383槽位移走，不是涉及迁移数据，保证cluster 可用<br />  
   ./redis_cluster_data_move -t ms -h host -p port -d target_id-r 0-16383 -P redis 密码<br />  
 
-### move data: <br />  
+### 自动迁移分片及数据 move data: <br />  
   移动槽位及数据<br />  
 
   ./redis_cluster_data_move -t md -h source_host:port-target_host2:port2 -s source_id -d target_id -r 0-16383 -P redis 密码<br />  
 
-### 删除节点<br />  
+### 自动删除节点<br />  
   del redis node: <br />  
 在集群host：port删除 node_id <br />  
 
   ./redis_cluster_data_move -t del -h host -p port -n node_id  -P redis 密码<br />  
 
-### add redis node:添加节点<br />  
+### 自动添加 add redis node:添加节点<br />  
 
 在集群source_host:port 添加目标target_host:target_port<br />  
 
