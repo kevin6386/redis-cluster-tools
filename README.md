@@ -24,57 +24,57 @@
 
 
 
-但不是很完善，希望能给大家一个借鉴。
+但不是很完善，希望能给大家一个借鉴。<br />  
 
 
-### 自动分片槽位
-  auto Resharding all slot to set master : 
-  ./redis_cluster_data_move -t reshard -h host -p port -P redis 密码
+### 自动分片槽位<br />  
+  auto Resharding all slot to set master : <br />  
+  ./redis_cluster_data_move -t reshard -h host -p port -P redis 密码<br />  
 
-### 自动迁移槽位
-  move slot:移动slot，此时槽位为空，也就是当cluster down 时，快速将16383槽位移走，不是涉及迁移数据，保证cluster 可用
-  ./redis_cluster_data_move -t ms -h host -p port -d target_id-r 0-16383 -P redis 密码
+### 自动迁移槽位<br />  
+  move slot:移动slot，此时槽位为空，也就是当cluster down 时，快速将16383槽位移走，不是涉及迁移数据，保证cluster 可用<br />  
+  ./redis_cluster_data_move -t ms -h host -p port -d target_id-r 0-16383 -P redis 密码<br />  
 
-### move data: 
-  移动槽位及数据
+### move data: <br />  
+  移动槽位及数据<br />  
 
-  ./redis_cluster_data_move -t md -h source_host:port-target_host2:port2 -s source_id -d target_id -r 0-16383 -P redis 密码
+  ./redis_cluster_data_move -t md -h source_host:port-target_host2:port2 -s source_id -d target_id -r 0-16383 -P redis 密码<br />  
 
-### 删除节点
-  del redis node: 
-在集群host：port删除 node_id 
+### 删除节点<br />  
+  del redis node: <br />  
+在集群host：port删除 node_id <br />  
 
-  ./redis_cluster_data_move -t del -h host -p port -n node_id  -P redis 密码
+  ./redis_cluster_data_move -t del -h host -p port -n node_id  -P redis 密码<br />  
 
-### add redis node:添加节点
+### add redis node:添加节点<br />  
 
-在集群source_host:port 添加目标target_host:target_port
+在集群source_host:port 添加目标target_host:target_port<br />  
 
-  ./redis_cluster_data_move -t add -h source_host:source_port-target_host:target_port  -P redis 密码
+  ./redis_cluster_data_move -t add -h source_host:source_port-target_host:target_port  -P redis 密码<br />  
 
-### add redis slave node:将节点添加为从
+### add redis slave node:将节点添加为从<br />  
 
-将host:port 添加为node_id 的从节点
+将host:port 添加为node_id 的从节点<br />  
 
-  ./redis_cluster_data_move -t add_slave -h host -p port -n node_id -P redis 密码
+  ./redis_cluster_data_move -t add_slave -h host -p port -n node_id -P redis 密码<br />  
 
-### update redis slave to master :
+### update redis slave to master :<br />  
 
-将slave手动升级为master ，在升级时使用将host port 上级为master 
+将slave手动升级为master ，在升级时使用将host port 上级为master <br />  
 
-  ./redis_cluster_data_move -u up -h host -p port  -P redis 密码
+  ./redis_cluster_data_move -u up -h host -p port  -P redis 密码<br />  
 
 
-### 命令参数解释：
+### 命令参数解释：<br />  
 
-  -t      任务类型
-  -h      主机
-  -p      端口
-  -d      节点id
-  -s      源节点id
-  -r      槽位范围
-  -n      节点id
-  -P      redis 密码
+  -t      任务类型<br />  
+  -h      主机<br />  
+  -p      端口<br />  
+  -d      节点id<br />  
+  -s      源节点id<br />  
+  -r      槽位范围<br />  
+  -n      节点id<br />  
+  -P      redis 密码<br />  
 
 
 ### 使用中难免有BUG的地方，有问题可以发送内容到979835161@qq.com 邮箱
