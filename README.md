@@ -48,4 +48,5 @@
 	
   使用
 	编辑程序redis_cluster_tool	
+	
 	my $pass='redis';#设置密码
