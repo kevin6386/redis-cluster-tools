@@ -16,7 +16,7 @@ my $port;
 my $tar_port;
 my $sou_port;
 my $start_slot;
-my $pass='vooleredis';
+my $pass='redis';#设置密码
 my $node;
 my $source_node;
 my $range;
