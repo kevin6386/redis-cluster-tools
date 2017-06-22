@@ -47,5 +47,5 @@
 	#将host和port实例升级weimaster
 	
 	
-编辑程序redis_cluster_tool
-my $pass='redis';#设置密码
+	编辑程序redis_cluster_tool	
+	my $pass='redis';#设置密码
