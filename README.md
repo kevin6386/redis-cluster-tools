@@ -1,10 +1,10 @@
-+------------------------------------------------------------------------+
-|Redis Cluster Tool for Redis Cluster					  |
-|version:V1.1 2016/09/12   支持Redis Cluster 密码    		       |
-|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用             |
-|			欢迎使用Redis Cluster Tool 工具	             |
-+------------------------------------------------------------------------+
-options :
+	+------------------------------------------------------------------------+
+	|Redis Cluster Tool for Redis Cluster					  |
+	|version:V1.1 2016/09/12   支持Redis Cluster 密码    		       |
+	|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用             |
+	|			欢迎使用Redis Cluster Tool 工具	             |
+	+------------------------------------------------------------------------+
+	options :
                 'help',         # 帮助
                 't',            # 设置参数:
 				ms:移动slot,reshard 重新分片,
@@ -23,7 +23,7 @@ options :
                 'n',            # node 节点,如: -n 'id' 如果2个时,-n 'source-id,destion-id'
                 'r',              #指定slot 范围,如:-r 0-16383
                 'b',            #指定backup 地址:如 -b ip:port,-b 'ip:port,ip2:port2'
-Sample :
+	Sample :
 	
 	redis_cluster_tool -t nodes -h host:port
 	#查看集群节点信息
