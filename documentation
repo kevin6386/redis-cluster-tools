@@ -1,363 +1,297 @@
-系统环境
-. . 安装Getopt::Std perl环境，根据自己系统环境可到官网进行下载安装http://search.cpan.org
-机器环境：
-    172.16.10.218 ：7000 
-    172.16.10.205 ：7005
+针对第一版进行了相应bug修改，改动较大。使用上更加简化或简单，为快速创建集群，迁移数据，恢复故障提供帮助。在创建集群时可根据给予的ip自动创建主从及初始化，建议master和slave分别在不同机器。
+参数介绍：
++------------------------------------------------------------------------+
+|Redis Cluster Tool for Redis Cluster					                 |
+|version:V1.1 2016/09/12   支持Redis Cluster 密码    			             |
+|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用               |
+|			欢迎使用Redis Cluster Tool 工具	                             |
++------------------------------------------------------------------------+
+options :
+                'help',         # 帮助
+                't',            # 设置参数:
+				ms:移动slot,reshard 重新分片,
+				del:删除节点,
+				add:添加节点,
+				add_slave:添加slave,
+				up:升级slave,
+				create:创建集群,注意主从分别为不同物理机
+				up:升级
+				info:集群信息
+				nodes:集群节点信息
+                'h',            # 主机host:如
+				-h 1.1.1.1:port ,
+				多个主机时:-h '1.1.1.1:port,2.2.2.2:port'用','隔开  
+                'p',            # 端口
+                'n',            # node 节点,如: -n 'id' 如果2个时,-n 'source-id,destion-id'
+                'r',              #指定slot 范围,如:-r 0-16383
+                'b',            #指定backup 地址:如 -b ip:port,-b 'ip:port,ip2:port2'
+Sample :
+	
+	redis_cluster_tool -t nodes -h host:port
+	#查看集群节点信息
+	redis_cluster_tool -t info -h host:port
+	#查看集群信息
+	redis_cluster_tool -t create -h 'host1:port1,host2:port2,host3:port3' -b 'backip1:port1,backip2:port2,backip3:port3'
+	#创建集群,并自动根据不同物理ip配置主从关系,尽量根据对应关系来进行创建如:host1:port1 对应的备份关系为backip1:port1
+	#并在创建完集群后自动进行根据master个数分片
+	redis_cluster_tool -t reshard -h host:port
+	#自动根据当前master 进行将16384 进行重新分片,注意在集群创建初化时进行,当线上重新分配，其中的slot会有短暂中断情况
+	#可以先人工计算，然后将slot以迁移方式进行	
+	redis_cluster_tool -t ms -h host:port -n node_id -r 0-16383
+	#对slot进行迁移,将0-16383范围内的host:prot 的slot迁移到 nodeid 为 -n指定的节点
+	redis_cluster_tool -t del -h host:port -n  node_id 
+	#在host:port 中删除删除节点id
+	redis_cluster_tool -t add -h source_host:source_port,target_host:target_port 
+	# 添加节点到source_host:port 中
+	redis_cluster_tool -t add_slave -h host:port -n node_id
+	#添加slave节点:将node_id 节点添加到host中
+	redis_cluster_toole -t up  -h host:port
+	#将host和port实例升级weimaster
 
-主要文件配置
+环境准备：
+ip：172.16.40.15
+port:7000-7005
+master:7000-7002
+slave:7003-7005
+启动各个服务
+程序修改地方：
+编辑程序redis_cluster_tool
+my $pass='redis';#设置密码
+创建集群
 
-masterauth "kevin"
-requirepass "kevin"
-cluster-enabled yes
-cluster-config-file /opt/redis/etc/7000/nodes-7000.conf
-cluster-node-timeout 5000
-#cluster-slave-validity-factor 10
-cluster-migration-barrier 2
+查看集群节点：
 
-#集群测试
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+7bb1bfda0f4bf86d22c095dc12c070b83cba0c5f :7000 myself,master - 0 0 0 connected
+[root@localhost ~]# 
 
-在218 上启动redis cluster ，但是并没有slot：信息如下
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected
-初始化slot分配所有的slot：
-（会对当前节点上显示的所有master都要通知下slot信息）
-[root@localhost ~]# ./redis_cluster_data_move -t reshard -h 172.16.10.218 -p 7000 -P redis密码
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16378 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16379 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16380 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16381 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16382 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
- 
-auto Resharding : redis-cli -h 127.0.0.1 -p 7000 -a kevin CLUSTER SETSLOT 16383 NODE 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 : OK
-集群状态
-9688:M 28 Mar 23:41:48.133 * Background saving terminated with success
-9688:M 28 Mar 23:43:01.722 # Cluster state changed: ok
-·  
-查看集群信息已经分配
-[root@localhost ~]# redis-cli -p 7000 -a kevin  CLUSTER nodes
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 0-16383  -P redis密码
-在205 上启动新节点
-redis-server /opt/redis/etc/7000/redis_7000.conf &
+创建集群：
 
-218 上添加新节点
-[root@localhost ~]# ./redis_cluster_data_move.pl -t add -h 172.16.10.205 -p 7000  -P redis密码
-redis-cli  -h 127.0.0.1  -p 7000 -a kevin cluster meet 172.16.10.205 7000 : OK
-查看集群状态
-[root@localhost ~]# redis-cli -p 7000 -a kevin  CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459180167113 2 connected #并没有分配slot
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 0-16383
-自动分配slot给205：7000 节点 
-根据本机多个master 进行自动分配。
-[root@localhost ~]# ./redis_cluster_data_move -t reshard -h 172.16.10.218 -p 7000 -P redis密码
-·   
-auto Resharding : redis-cli -h 172.16.10.205 -p 7000 -a kevin CLUSTER SETSLOT 81 NODE 2404b44e4937c65c73cbccb778776e392619c776 : OK
- 
-auto Resharding : redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER SETSLOT 81 NODE 2404b44e4937c65c73cbccb778776e392619c776 : OK
- 
-auto Resharding : redis-cli -h 172.16.10.205 -p 7000 -a kevin CLUSTER SETSLOT 82 NODE 2404b44e4937c65c73cbccb778776e392619c776 : OK
- 
-auto Resharding : redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER SETSLOT 82 NODE 2404b44e4937c65c73cbccb778776e392619c776 : OK
-注意红色部分，显示对81槽位进行广播，在205 和218 上都进行广播，将81给node节点2404b44e4937c65c73cbccb778776e392619c776 ，节点是自行判断无需指定
+./redis_cluster_tool -t create -h '172.16.40.15:7000,172.16.40.15:7001,172.16.40.15:7002' -b '172.16.40.15:7003,172.16.40.15:7004,172.16.40.15:7005'
+#-h 指定master ip和端口
+#-b 指定作为master的slaveip和端口
+#注意-h 指定的ip 和 -b 指定的ip 最好顺序一致，因为程序会根据 根据顺序建立主从，
+#例如：当master为172.16.40.15:7000时slave为172.16.40.15:7003
+#为了安全起见master和slave都要在不同机器上进行分配
 
-查看集群信息：
-[root@localhost ~]# redis-cli -p 7000 -a kevin  CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459180780937 2 connected 0-8191
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 8192-16383
+查看集群节点
 
-#插入数据测试：
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+0f36f228db6152c011e88ea80789a15605bbb4d6 172.16.40.15:7005 slave a5ca00b9a91339d73fa6ce535f222d1322774e03 0 1474292615619 3 connected
+bfe2bfce2fff353fe89ab879705a78447d6226b1 172.16.40.15:7004 slave 3cdedce16e32ae284fc81fd31a941c59b40408e4 0 1474292614218 4 connected
+9a4b151ce090ffc47ce2bf426df4b14d9cb19834 172.16.40.15:7003 slave b358c4db550640cd9ecc9861115cb2f5d0504bd5 0 1474292614618 1 connected
+3cdedce16e32ae284fc81fd31a941c59b40408e4 172.16.40.15:7001 master - 0 1474292615218 4 connected 5462-10922
+b358c4db550640cd9ecc9861115cb2f5d0504bd5 172.16.40.15:7000 myself,master - 0 0 1 connected 0-5461
+a5ca00b9a91339d73fa6ce535f222d1322774e03 172.16.40.15:7002 master - 0 1474292615619 3 connected 10923-16383
+[root@localhost ~]# 
+迁移槽位
+#会将数据也进行迁移，此时需要观察程序或连接是否有异常情况
+#将7001 的5462-10922槽位迁移到7000端口
+3cdedce16e32ae284fc81fd31a941c59b40408e4 172.16.40.15:7001 master - 0 1474292615218 4 connected 5462-10922
+b358c4db550640cd9ecc9861115cb2f5d0504bd5 172.16.40.15:7000 myself,master - 0 0 1 connected 0-5461
+检测被迁移槽位程序主要测试在迁移过程中此slot是否读取正常
+
+[root@localhost soft]# cat get_key.sh 
 #!/bin/bash
-number=100000
-let i=1
-while  [ $i -le $number ];do
-    redis-cli -h 172.16.10.205 -c  -p 7000 -a kevin set $i test$i 
-    ((i++))
+if [[ $# -eq 3 ]];then 
+	ip=$1
+	port=$2
+	slot=$3
+else
+	echo "please input slot ip port slot \n"
+	exit
+fi
+while(true);
+do
+	num=`redis-cli -c -h $ip -p $port -a redis  CLUSTER COUNTKEYSINSLOT $slot|awk '{print $1}'`
+	key=`redis-cli -c -h $ip -p $port -a redis  CLUSTER GETKEYSINSLOT $slot $num`
+	for i in $key
+	do
+		echo "fdsafdsafdsa-----------">>/tmp/aa.txt
+		redis-cli -c -h $ip -p $port -a redis get $i
+	done
 done
-#迁移数据：
-#先手动进行模拟测试：
-连接205 进行节点导入数据
-[root@localhost ~]# redis-cli -p 7000 -a kevin  CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459183013122 2 connected 0-8192
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 8193-16383
 
-将9000槽位从218 7000节点导入205：7000节点
+使用方法 ：
+./get_key.sh 172.16.40.15 7001 5480 #被迁移的ip 端口 和范围内的槽位
+迁移数据5462-10922
 
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin CLUSTER SETSLOT 9842 IMPORTING 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32
-OK
+./redis_cluster_tool -t ms -h 172.16.40.15:7001 -n b358c4db550640cd9ecc9861115cb2f5d0504bd5 -r 5462-10922
+#b358c4db550640cd9ecc9861115cb2f5d0504bd5 将槽位迁移目标节点
+显示如下图：
+
+当存在数据时会将数据进行迁移，否则直接迁移槽位即可
+
+重新分片：
+[root@localhost ~]# ./redis_cluster_tool -t reshard -h 172.16.40.15:7000
+涉及迁移数据,为保证数据安全性,暂时利用数据迁移功能进行迁移。根据master 计算得知各个节点的槽位如下: 
+172.16.40.15:7000 分得槽位范围: 0 5461
+172.16.40.15:7001 分得槽位范围: 5462 10922
+172.16.40.15:7002 分得槽位范围: 10923 16383 
+请使用 ./redis_cluster_tool -t ms -h host:port -n nodeid -r range 进行分配
+删除节点：
+查看集群：
+
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474371620296 3 connected 6001-10922
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474371622299 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 0-6000
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474371621298 2 connected 10923-16383
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474371620797 4 connected
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474371620296 3 connected
 [root@localhost ~]# 
+删掉节点
 
-将9000槽位从205：7000节点迁出到218：7000节点
+[root@localhost ~]# ./redis_cluster_tool -t del -h 172.16.40.15:7000 -n 687e32407e37c0ef4343378636d31e957bfb9846
+172.16.40.15 -p 7000 删除节点687e32407e37c0ef4343378636d31e957bfb9846 状态:OK
+     查看集群
 
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER SETSLOT 9842 MIGRATING  2404b44e4937c65c73cbccb778776e392619c776
-OK
+        此时7002 不存在但是槽位10923-16383 已经不存在，线上禁止直接删除master 
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474371715930 3 connected 6001-10922
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave - 0 1474371714428 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 0-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474371714928 4 connected
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474371716429 3 connected
+添加节点：
+添加
+
+[root@localhost ~]# ./redis_cluster_tool -t add -h 172.16.40.15:7002,172.16.40.15:7000 
+将172.16.40.15 7000 添加172.16.40.15 -p 7002 集群状态:OK
 [root@localhost ~]# 
+查看集群：
 
-此时状态9842已经有映射关系
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474371908170 3 connected 6001-10922
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474371907670 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 0-6000
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474371907170 2 connected 10923-16383
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474371906669 4 connected
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474371906669 3 connected
+       添加新节点
 
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 myself,master - 0 0 2 connected 0-8192 [9000-<-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32] [9842-<-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32]
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 master - 0 1459183597046 0 connected 8193-16383
+        redis-server redis_7006.conf &
 
-计算218 节点9000槽位的key
+[root@localhost ~]# ./redis_cluster_tool -t add -h 172.16.40.15:7006,172.16.40.15:7000
+将172.16.40.15 7000 添加172.16.40.15 -p 7006 集群状态:OK
 
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER COUNTKEYSINSLOT 9842
-(integer) 13
-[root@localhost ~]# 
+查看集群：
 
-列出key值
+[root@localhost 7006]# /usr/local/bin/redis-cli -h 172.16.40.15 -p 7000 -a redis cluster nodes
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474373250315 3 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474373249314 2 connected 10923-16383
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474373249815 3 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474373248813 0 connected
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474373248813 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 0-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474373250815 4 connected
+[root@localhost 7006]# 
+为新节点3d6ebc11386689f2b4d3c116872bfa271affce1c分配槽位：
 
-·  [root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER GETKEYSINSLOT 9842 13
- 1) "1"
- 2) "143511"
- 3) "146263"
- 4) "152550"
- 5) "157222"
- 6) "161593"
- 7) "17683"
- 8) "186179"
- 9) "21132"
-10) "24640"
-11) "30173"
-12) "35601"
-13) "85187"
-[root@localhost ~]# 
+[root@localhost ~]# ./redis_cluster_tool -t ms -h 172.16.40.15:7000 -n 3d6ebc11386689f2b4d3c116872bfa271affce1c -r 0-500
+#从172.16.40.15:7000 上分配 -r 0-500 给新加的节点  -n 3d6ebc11386689f2b4d3c116872bfa271affce1c 
+查看集群 
 
-迁移key
-
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin MIGRATE 172.16.10.205 7000 143511 0 1000(error) ERR Target instance replied with error: NOAUTH Authentication required.
-[root@localhost ~]# 
-
-此时显示认证失败
-
-解决办法：将密码重置为空
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin 
-172.16.10.205:7000> config set requirepass ''
-OK
-172.16.10.205:7000> 
-
-再次运行
-
- [root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin MIGRATE 172.16.10.205 7000 143511 0 1000
-OK
-[root@localhost ~]# 
-
-其他key同上进行迁移
-
-获取143511key的值
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin get 143511
-(error) MOVED 9842 172.16.10.218:7000
-[root@localhost ~]# 
-
-说明集群还没有刷新此key对应的节点，在执行setslot 通知集群，此key槽位更新
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin CLUSTER SETSLOT 9842 NODE 2404b44e4937c65c73cbccb778776e392619c776
-OK
-[root@localhost ~]# 
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin get 143511
-"test143511"
-[root@localhost ~]# 
-
-再次获取集群信息：
-
-槽位及数据已经迁移
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459184382164 2 connected 0-8192 9000 9482 9842
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 8193-8999 9001-9481 9483-9841 9843-16383
-·  
-
-#自动迁移218：7000 部分槽位及数据到 205：7000
-
-[root@localhost ~]# ./redis_cluster_data_move -t md -h 172.16.10.218:7000-172.16.10.205:7000 -s 5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 -d 2404b44e4937c65c73cbccb778776e392619c776 -r 8193-8999  -P redis密码
-显示如下信息
-。。。。。
-
-move 79954 to 172.16.10.205:7000
-echo "MIGRATE 172.16.10.205 7000 79954 0 1000"| redis-cli -h 172.16.10.218 -p 7000 -a kevinOK
- 
-move 80468 to 172.16.10.205:7000
-echo "MIGRATE 172.16.10.205 7000 80468 0 1000"| redis-cli -h 172.16.10.218 -p 7000 -a kevinOK
- 
-move 91429 to 172.16.10.205:7000
-echo "MIGRATE 172.16.10.205 7000 91429 0 1000"| redis-cli -h 172.16.10.218 -p 7000 -a kevinOK
-
-在查看集群信息
-
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459185086256 2 connected 0-9000 9482 9842
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 9001-9481 9483-9841 9843-16383
-[root@localhost ~]# 
-
-随机找个key值计算槽位：
-
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER KEYSLOT 80468
-(integer) 8999
-[root@localhost ~]# 
-
-getkey值测试：已经move到205：7000节点，说明已经ok
-
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin get  80468
-(error) MOVED 8999 172.16.10.205:7000
-[root@localhost ~]# 
-
-再到205：7000 节点读取已经ok
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin get  80468
-"test80468"
-[root@localhost ~]# 
-最后别忘了给205 设置密码：
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 
-
-172.16.10.205:7000> config set requirepass kevin
-OK
-172.16.10.205:7000> 
-数据迁移已经ok
-
-#redis 管理工具
-
-添加节点
-
-[root@localhost ~]# redis-cli -h 172.16.10.218 -p 7000 -a kevin CLUSTER nodes
-2404b44e4937c65c73cbccb778776e392619c776 172.16.10.205:7000 master - 0 1459187652232 2 connected 0-9000 9482 9842
-5cf7ae3c2ad7de4115841e04ede03a0c3ce49e32 172.16.10.218:7000 myself,master - 0 0 0 connected 9001-9481 9483-9841 9843-16383
-[root@localhost ~]# 
-
-[root@localhost ~]# ./redis_cluster_data_move -t add -h 172.16.10.218 -p 7002  -P redis密码
-redis-cli  -h 127.0.0.1  -p 7000 -a kevin cluster meet 172.16.10.218 7002 : OK
-  
-[root@localhost ~]# ./redis_cluster_data_move -t add -h 172.16.10.205 -p 7002  -P redis密码
-redis-cli  -h 127.0.0.1  -p 7000 -a kevin cluster meet 172.16.10.205 7002 : OK
- 
-[root@localhost ~]# ./redis_cluster_data_move -t add -h 172.16.10.205 -p 7001  -P redis密码
-redis-cli  -h 127.0.0.1  -p 7000 -a kevin cluster meet 172.16.10.205 7001 : OK
- 
-[root@localhost ~]# ./redis_cluster_data_move -t add -h 172.16.10.205 -p 7000  -P redis密码
-redis-cli  -h 127.0.0.1  -p 7000 -a kevin cluster meet 172.16.10.205 7000 : OK
-
+[root@localhost 7006]# /usr/local/bin/redis-cli -h 172.16.40.15 -p 7000 -a redis cluster nodes
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474373478069 3 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474373478970 2 connected 10923-16383
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474373479071 3 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474373477268 5 connected 0-500
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474373479171 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 501-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474373478570 4 connected
+[root@localhost 7006]# 
+#0-500 过去了说明正常
 添加从节点
+查看集群
 
-将205 每个端口都作为218对应端口的从（可根据自己进行定义）
-[root@localhost ~]# ./redis_cluster_data_move -t add_slave -h 172.16.10.205 -p 7002 -n a1f93e3db92cbb384e1e67edfbd7d6032916ee52 -P redis密码
-redis-cli  -h 172.16.10.205  -p 7002 -a kevin cluster replicate a1f93e3db92cbb384e1e67edfbd7d6032916ee52 : OK
- 
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474375187528 3 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474375187528 2 connected 10923-16383
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474375189030 3 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474375188028 5 connected 0-720
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474375189030 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 721-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 875a541193288f9a5a9e469491ed32b0697ea376 0 1474375187027 4 connected
 [root@localhost ~]# 
+将7003 节点添加为7006 的从
+
+[root@localhost ~]# ./redis_cluster_tool -t add_slave -h 172.16.40.15:7003 -n 3d6ebc11386689f2b4d3c116872bfa271affce1c
+将172.16.40.15 -p 7003 设置为3d6ebc11386689f2b4d3c116872bfa271affce1c 的从 :OK 
 [root@localhost ~]# 
-[root@localhost ~]# redis-cli -p 7000 -a kevin cluster nodes
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 slave 29711b239305bd0cfdadaa3d17e37444be6ee705 0 1459244447444 5 connected
-2cb57b0345d77e3bcb8ed6955808ef7e51aaf1ab 172.16.10.205:7002 slave a1f93e3db92cbb384e1e67edfbd7d6032916ee52 0 1459244446441 4 connected
-e4d6e77ab462309680f22cedff0c1702f1bb1cfb 172.16.10.205:7001 slave 0035c65bf69cedd663ef21b5fbc9029a08ba8c34 0 1459244448445 1 connected
-0035c65bf69cedd663ef21b5fbc9029a08ba8c34 172.16.10.218:7001 master - 0 1459244446943 1 connected
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 myself,master - 0 0 2 connected
-a1f93e3db92cbb384e1e67edfbd7d6032916ee52 172.16.10.218:7002 master - 0 1459244448445 4 connected
-[root@localhost ~]# 
-·  
-删除从节点
-
-[root@localhost ~]# ./redis_cluster_data_move -t del -h 172.16.10.218 -p 7000 -n 2efd6be8decc12f19aaadbc704e1d88941327fd3  -P redis密码
-redis-cli  -h 172.16.10.218  -p 7000 -a kevin CLUSTER FORGET 2efd6be8decc12f19aaadbc704e1d88941327fd3 : OK
-[root@localhost ~]# 
-
-修改从节点
-
-将218 7003 添加为节点
-
-29711b239305bd0cfdadaa3d17e37444be6ee705 从节点
-
-[root@localhost ~]# ./redis_cluster_data_move -t add_slave -h 172.16.10.218 -p 7003 -n 29711b239305bd0cfdadaa3d17e37444be6ee705  -P redis密码
-redis-cli  -h 172.16.10.218  -p 7003 -a kevin cluster replicate 29711b239305bd0cfdadaa3d17e37444be6ee705 : OK
- 
+查看集群：
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474375632056 3 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474375630054 2 connected 10923-16383
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474375631556 3 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474375630555 5 connected 0-720
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474375631055 2 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 721-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 3d6ebc11386689f2b4d3c116872bfa271affce1c 0 1474375631055 5 connected
 [root@localhost ~]#
+升级slave为master
+将7002 升级为7005的master
+查看集群
 
-将218 7003端口从节点提升为master
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474376007020 8 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 slave b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 0 1474376006019 7 connected
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474376005518 8 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474376006019 5 connected 0-720
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 master - 0 1474376005518 7 connected 10923-16383
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 721-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 3d6ebc11386689f2b4d3c116872bfa271affce1c 0 1474376006519 5 connected
+[root@localhost ~]#
+升级为master
 
-[root@localhost ~]# redis-cli -p 7000 -a kevin cluster nodes
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 master,fail - 1459245775375 1459245772975 6 disconnected
-e4d6e77ab462309680f22cedff0c1702f1bb1cfb 172.16.10.205:7001 slave 0035c65bf69cedd663ef21b5fbc9029a08ba8c34 0 1459248267228 1 connected
-2cb57b0345d77e3bcb8ed6955808ef7e51aaf1ab 172.16.10.205:7002 slave a1f93e3db92cbb384e1e67edfbd7d6032916ee52 0 1459248268731 4 connected
-a1f93e3db92cbb384e1e67edfbd7d6032916ee52 172.16.10.218:7002 master - 0 1459248267228 4 connected 10923-16383
-0035c65bf69cedd663ef21b5fbc9029a08ba8c34 172.16.10.218:7001 master - 0 1459248268230 1 connected 0-5461
-2efd6be8decc12f19aaadbc704e1d88941327fd3 172.16.10.218:7003 slave 29711b239305bd0cfdadaa3d17e37444be6ee705 0 1459248268731 7 connected
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 myself,master - 0 0 7 connected 5462-10922
-[root@localhost ~]# ./redis_cluster_data_move -t up -h 172.16.10.218 -p 7003  -P redis密码
-redis-cli  -h 172.16.10.218  -p 7003 -a kevin  CLUSTER FAILOVER  : OK
+[root@localhost ~]# ./redis_cluster_tool -t up -h 172.16.40.15:7002
+/usr/local/bin/redis-cli  -h 172.16.40.15 -p 7002 -a redis  CLUSTER FAILOVER 
+将172.16.40.15 -p 7002 提升为master OK ,原Master 为172.16.40.15:7005 
 [root@localhost ~]# 
-[root@localhost ~]# redis-cli -p 7000 -a kevin cluster nodes
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 master,fail - 1459245775375 1459245772975 6 disconnected
-e4d6e77ab462309680f22cedff0c1702f1bb1cfb 172.16.10.205:7001 slave 0035c65bf69cedd663ef21b5fbc9029a08ba8c34 0 1459248313820 1 connected
-2cb57b0345d77e3bcb8ed6955808ef7e51aaf1ab 172.16.10.205:7002 slave a1f93e3db92cbb384e1e67edfbd7d6032916ee52 0 1459248313319 4 connected
-a1f93e3db92cbb384e1e67edfbd7d6032916ee52 172.16.10.218:7002 master - 0 1459248313319 4 connected 10923-16383
-0035c65bf69cedd663ef21b5fbc9029a08ba8c34 172.16.10.218:7001 master - 0 1459248314321 1 connected 0-5461
-2efd6be8decc12f19aaadbc704e1d88941327fd3 172.16.10.218:7003 master - 0 1459248312818 8 connected 5462-10922
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 myself,slave 2efd6be8decc12f19aaadbc704e1d88941327fd3 0 0 7 connected
+查看集群：
 
-集群信息
+[root@localhost ~]# ./redis_cluster_tool -t nodes -h 172.16.40.15:7000
+4dbf2af3a77f2ff54b520558ee451fc968906507 172.16.40.15:7001 master - 0 1474376029548 8 connected 6001-10922
+687e32407e37c0ef4343378636d31e957bfb9846 172.16.40.15:7002 master - 0 1474376030049 9 connected 10923-16383
+0221d794c0669de759c43e7e57ec401f3832b957 172.16.40.15:7004 slave 4dbf2af3a77f2ff54b520558ee451fc968906507 0 1474376029048 8 connected
+3d6ebc11386689f2b4d3c116872bfa271affce1c 172.16.40.15:7006 master - 0 1474376030550 5 connected 0-720
+b2ca7e0345a84c3f299cc5a09c2b9985424c3bcc 172.16.40.15:7005 slave 687e32407e37c0ef4343378636d31e957bfb9846 0 1474376029548 9 connected
+875a541193288f9a5a9e469491ed32b0697ea376 172.16.40.15:7000 myself,master - 0 0 4 connected 721-6000
+2160454279ced52d0b7d208113d0190986298042 172.16.40.15:7003 slave 3d6ebc11386689f2b4d3c116872bfa271affce1c 0 1474376030550 5 connected
+[root@localhost ~]# 
 
-[root@localhost ~]# redis-cli -p 7000 -a kevin cluster nodes
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 slave 29711b239305bd0cfdadaa3d17e37444be6ee705 0 1459244447444 5 connected
-2cb57b0345d77e3bcb8ed6955808ef7e51aaf1ab 172.16.10.205:7002 slave a1f93e3db92cbb384e1e67edfbd7d6032916ee52 0 1459244446441 4 connected
-e4d6e77ab462309680f22cedff0c1702f1bb1cfb 172.16.10.205:7001 slave 0035c65bf69cedd663ef21b5fbc9029a08ba8c34 0 1459244448445 1 connected
-0035c65bf69cedd663ef21b5fbc9029a08ba8c34 172.16.10.218:7001 master - 0 1459244446943 1 connected
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 myself,master - 0 0 2 connected
-a1f93e3db92cbb384e1e67edfbd7d6032916ee52 172.16.10.218:7002 master - 0 1459244448445 4 connected
-·  
-
-#测试集群故障
-
-1、分槽
-
-./redis_cluster_data_move -t reshard -h 172.16.10.218 -p 7000  -P redis密码
-
-2、杀掉其中一个主
-
-[root@localhost ~]# redis-cli -p 7000 -a kevin shutdown
-
-3、查看集群状态
-
-[root@localhost ~]# redis-cli -p 7001 -a kevin cluster nodes
-a1f93e3db92cbb384e1e67edfbd7d6032916ee52 172.16.10.218:7002 master - 0 1459245337658 4 connected 10923-16383
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 master - 0 1459245338660 6 connected 5462-10922
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 master,fail - 1459245328638 1459245327636 2 disconnected
-e4d6e77ab462309680f22cedff0c1702f1bb1cfb 172.16.10.205:7001 slave 0035c65bf69cedd663ef21b5fbc9029a08ba8c34 0 1459245337157 1 connected
-2cb57b0345d77e3bcb8ed6955808ef7e51aaf1ab 172.16.10.205:7002 slave a1f93e3db92cbb384e1e67edfbd7d6032916ee52 0 1459245338660 4 connected
-0035c65bf69cedd663ef21b5fbc9029a08ba8c34 172.16.10.218:7001 myself,master - 0 0 1 connected 0-5461
-
-4、插入集群数据测试
-
-脚本如下
-[root@localhost ~]# cat in.sh 
+插入脚本：
+[root@localhost soft]# cat in.sh 
 #!/bin/bash
-number=200000
+number=20000000
 let i=1
 while  [ $i -le $number ];do
-echo    ` redis-cli -h 172.16.10.205 -c  -p 7001 -a kevin set $i test$i `
+    redis-cli -h 172.16.40.15 -c  -p 7000 -a redis set $i test$i >>/tmp/in.sh 
     ((i++))
 done
+检测key脚本
+[root@localhost ~]# cat check_key.pl 
+#!/usr/bin/perl
+##Redis Tool for Redis Cluster
+##kevin6386@163.com 2016/09/12 v.1.1
+##Support Passwrod for Redis Cluster
+use strict;
+my $pass='redis';
+my $host='172.16.40.15 -p 7001 ';
+my $en=2000;
+my $i=0;
+while(1){
+while ($i < $en ){
+	my $slot=$i;
+	my $n=`redis-cli -a $pass -c -h $host CLUSTER COUNTKEYSINSLOT $slot|awk '{print \$1}'`;
+	chomp($n);
+	my @key=`redis-cli -a $pass -c -h $host CLUSTER GETKEYSINSLOT $slot $n`;
+        foreach my $k (@key){
+               	chomp($k);
+		my $re=`redis-cli -c -h $host -a redis get $k`;
+		print "slot $slot key:$k 数据:$re   \n";
+        }
+	$i++;
+}
+}
 
-查看其中一个节点情况
-
-[root@localhost ~]# redis-cli -p 7001 -a kevin cluster nodes|grep bea712ec23b397b7f8c92b525c6e9af6367f5d22
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 master - 0 1459245642331 6 connected 5462-10922
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 slave bea712ec23b397b7f8c92b525c6e9af6367f5d22 0 1459245643332 6 connected
-
-运行插入数据脚本
-
-sh in.sh
-
-关掉master205：7000
-
-[root@localhost ~]# redis-cli -h 172.16.10.205 -p 7000 -a kevin shutdown
-
-查看in.sh 插入数据情况，会有一段时间205 7000 端口拒绝请求，
-集群不会down，一会会好，这取决于集群配置cluster-require-full-coverage no
-
-查看切换后状态，218 已经为master，切换成功
-
-[root@localhost ~]# redis-cli -p 7001 -a kevin cluster nodes|grep 7000
-bea712ec23b397b7f8c92b525c6e9af6367f5d22 172.16.10.205:7000 master,fail - 1459245775389 1459245773489 6 disconnected
-29711b239305bd0cfdadaa3d17e37444be6ee705 172.16.10.218:7000 master - 0 1459245813058 7 connected 5462-10922
-[root@localhost ~]# 
