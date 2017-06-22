@@ -1,0 +1,480 @@
+#!/usr/bin/perl
+#Redis Tool for Redis Cluster
+#kevin6386@163.com 2016/09/12 v.1.1
+#Support Passwrod for Redis Cluster
+use strict;
+use Getopt::Long;
+use Term::ANSIColor;
+my %opt;
+my $type;
+###
+my $host;
+my $host_in;
+my $source_host;
+my $tar_host;
+my $port;
+my $tar_port;
+my $sou_port;
+my $start_slot;
+my $pass='vooleredis';
+my $node;
+my $source_node;
+my $range;
+my $end_slot;
+my $target_ip;
+my $source_id;
+my $sou_host;
+my $backip;
+my $backip_port;
+my $target_host;
+my $host_port;
+my $rn;
+my $set;
+my $redis_cli=`which redis-cli`;
+chomp($redis_cli);
+#设置参数
+sub get_options{
+	#Get options info
+	GetOptions(\%opt,
+		'help',			# 帮助
+		't=s',		# 设置参数:ms 移动slot,reshard 重新分片,del 删除节点,add 添加节点,add_slave 添加slave,up 升级slave,create 创建集群,请不要在单台部署所有服务
+		'h=s',		# 主机host:如 -h 1.1.1.1:port ,多个主机时-h '1.1.1.1:port,2.2.2.2:port'用','隔开  
+		'p=s',		# 端口
+		'n=s',		# node 节点,如: -n 'id' 如果2个时,-n 'source-id,destion-id'
+		'r=s',              #指定slot 范围,如:-r 0-16383
+		'b=s',		#指定backup 地址:如 -b ip:port,-b 'ip:port,ip2:port2'
+	  ) or print_usage();
+	if (!scalar(%opt)) {
+		&print_usage();
+	}
+	if($opt{'help'}){
+		&print_usage();
+	};
+	if($opt{'t'} ){
+		$type=$opt{'t'};
+	}
+	my $num;
+	if($opt{'h'} ){
+                $host=$opt{'h'};
+                $host_in=$opt{'h'};
+		if($host =~/,/){
+			$host=~s/:/ -p /g;
+			$num=split(/,/,$host);
+		}else{
+			$num=1;
+			$host=~s/:/ -p /g;
+			#定义host 和端口 按照格式: -h host -p port
+			$host_port="-h $host";
+		}
+        }
+        if($opt{'p'} ){
+                $port=$opt{'p'};
+        }
+        if($opt{'n'} ){
+                $node=$opt{'n'};
+        }
+        if($opt{'r'} ){
+                $range=$opt{'r'};
+		if( $range =~ /-/img){
+		#设置slot,总共为16384个,根据输入的slot进行计算,否则为默认0-16383
+                	my @slots=split(/-/,$range);
+                	$start_slot=defined($slots[0])?$slots[0]:0;
+                	$end_slot=defined($slots[1])?$slots[1]:16383;
+			$rn=0;
+        	}else{
+			$range=$opt{'r'};
+			$rn=1;
+		}
+
+        }
+	my $bnum;
+        if($opt{'b'} ){
+                $backip=$opt{'b'};
+                $backip_port=$opt{'b'};
+		 if($backip =~/,/){
+                        $backip=~s/:/ /g;
+                        $backip_port=~s/:/ -p /g;
+                        $bnum=split(/,/,$backip);
+                }
+               if($backip_port =~/,/){
+                        $backip_port=~s/:/ -p /g;
+                }
+        }
+	if($type eq 'info' && $host ne ''){
+		if($num eq '1' ){
+			&cluster_info($host_port);
+		}
+	}elsif($type eq 'del' && $host ne '' && $node ne ''){
+		&del;
+	}elsif($type eq 'add' && $host ne '' ){
+		&add;
+
+	}elsif($type eq 'reshard' && $host ne '' ){
+		&redis_reshard();
+	}elsif($type eq 'add_slave' && $host ne '' && $node ne ''){
+		&add_slave;
+
+	}elsif($type eq 'up' && $host ne ''){
+		&up_master;
+	}elsif($type eq 'nodes' && $host ne ''){
+		if($num eq '1' ){
+                        &cluster_node($host_port);
+                }
+	}elsif($type eq 'create' && $host ne '' && $backip ne ''){
+		#print $host,"$num $bnum\n";
+		#判断master的个数和slave个数
+		if($bnum lt $num ){
+			print "主从个数不等,配置好主从,每个主必须配置大于一个从\n";
+			exit;
+		}else{
+			my @source_ip=split(/,/,$host);
+			my @back_ip=split(/,/,$backip);
+			for(my $i=0;$i<$num;$i++){
+				my $create_cmd="-h $source_ip[0] cluster meet $back_ip[$i]";
+				my $create_slave_cmd="$source_ip[$i],$back_ip[$i]";
+				#创建集群
+				&create_cluster($create_cmd);
+				#创建主从
+				&create_replicate($create_slave_cmd);
+			}
+			#为当前redis 集群分配16384个slot,因为数初始,所以给16384初始值
+			my $ip_rang="$source_ip[0]|16384";
+			&redis_reshard($ip_rang);
+		}
+	}elsif($type eq 'ms' && $host ne '' && $node ne '' && $range ne ''){
+		&MIG_SLOT();
+	}else{
+		&print_usage();
+	}
+}
+&get_options;
+#迁移slot,注意必须是初始化或允许丢失数据的情况下进行操作
+#执行顺序如下
+#CLUSTER SETSLOT <slot> MIGRATING <destination-node-id>
+#CLUSTER SETSLOT <slot> IMPORTING <source-node-id>
+#CLUSTER SETSLOT <slot> STABLE
+#CLUSTER SETSLOT <slot> NODE <node-id>
+sub MIG_SLOT{
+	#计算目标节点的ip地址和端口
+	my $source_ip_port=$host;
+	$source_ip_port=~s/ -p /:/g;
+	my $ip_con=`$redis_cli -a $pass -h $host  cluster nodes`;
+	chomp($ip_con);
+	if($ip_con eq ''){
+		print "$host con is error $ip_con \n";
+		exit;
+	}
+	$target_ip=`$redis_cli -a $pass -h $host  cluster nodes|sed -n '/^$node/'p|awk '{print \$2}'`;
+	$source_node=`$redis_cli -a $pass -h $host  cluster nodes|grep '$source_ip_port'|awk '{print \$1}'`;
+	chomp($source_node);
+	chomp($target_ip);
+	$target_ip=~s/:/ -p /g;
+	my $slot;
+	chomp($start_slot);
+	chomp($end_slot);
+	if($rn eq 1 ){
+		$slot=$range;
+		chomp($slot);
+                &check_key($slot);
+                my $sinfo=`$redis_cli -a $pass  -c -h $target_ip CLUSTER SETSLOT $slot STABLE`;
+                print "清除迁移slot状态 稳定槽位1\n";
+		chomp($sinfo);
+		if($sinfo !~ /ERR/mig){
+                	my $ninfo=`$redis_cli -a $pass -h $host CLUSTER SETSLOT $slot NODE $node`;
+                	my $ninfo2=`$redis_cli -a $pass -h $target_ip CLUSTER SETSLOT $slot NODE $node`;
+                	print "设定 slot $slot 通知各节点 状态:$ninfo $ninfo2 \n";
+		}
+	}else{
+		while ($start_slot <= $end_slot ){
+			$slot=$start_slot;
+			chomp($slot);
+			&check_key($slot);
+			my $sinfo=`$redis_cli -a $pass  -c -h $target_ip CLUSTER SETSLOT $slot STABLE`;
+			chomp($sinfo);
+			print "清除迁移slot状态 稳定槽位w\n"; 
+			if($sinfo !~ /ERR/mig){
+				my $ninfo=`$redis_cli -a $pass -h $host CLUSTER SETSLOT $slot NODE $node`;
+				my $ninfo2=`$redis_cli -a $pass -h $target_ip CLUSTER SETSLOT $slot NODE $node`;
+			}
+			$start_slot++;
+		}
+	}
+}
+#判断槽位是否有值
+sub check_key{
+	my $slot=$_[0];
+	my $get_key=`$redis_cli -a $pass -h $host CLUSTER COUNTKEYSINSLOT $slot|awk '{print \$1}'`;
+	chomp($get_key);
+	if($get_key eq 0 ){
+		my $minfo=`$redis_cli -a $pass -h $host CLUSTER SETSLOT $slot MIGRATING $node`;
+                print "将 $host $range MIGRATING(迁移) 到节点$node 上 状态:$minfo\n";
+		chomp($minfo);
+		if($minfo !~ /ERR/mig){
+                	my $iinfo=`$redis_cli -a $pass -h $target_ip CLUSTER SETSLOT $slot IMPORTING $source_node`;
+                	print "将 slot $slot importing(导入) 到节点$target_ip  上 状态:$iinfo\n";
+		}
+	}else{
+		print "$host  slot:$slot 存在值,个数为:$get_key ,程序将进行数据迁移,请知悉!\n";
+		 #IMPORTING
+                my $iinfo=`$redis_cli -a $pass -h $target_ip CLUSTER SETSLOT $slot IMPORTING $source_node`;
+                #MIGRATING
+                my $minfo=`$redis_cli -a $pass -h $host CLUSTER SETSLOT $slot MIGRATING $node`;
+		&move_keys($slot);
+
+	}	
+}
+#迁移数据
+#CLUSTER SETSLOT <slot> IMPORTING <source-node-id>.
+#CLUSTER SETSLOT <slot> MIGRATING <destination-node-id>.
+#CLUSTER GETKEYSINSLOTcommand and move them into the destination node using theMIGRATE command.
+#CLUSTER SETSLOT <slot> NODE <destination-node-id> in the source or destination.
+#We want to move hash slot 8 from A to B, so we issue commands like this:
+#We send B: CLUSTER SETSLOT 8 IMPORTING A
+#We send A: CLUSTER SETSLOT 8 MIGRATING B
+sub move_keys{
+	my $slot=$_[0];
+	if($slot ne ''){
+		#计算个数
+		my $t_ip=$target_ip;
+		$t_ip=~s/ -p / /g;
+		my $n=`$redis_cli -a $pass -h $host CLUSTER COUNTKEYSINSLOT $slot|awk '{print \$1}'`;
+		chomp($n);
+		my @key=`$redis_cli -a $pass -h $host CLUSTER GETKEYSINSLOT $slot $n`;
+		#MIGRATE不支持密码,暂时可能不可用
+		`$redis_cli -a $pass -h $host  config set requirepass ''`;
+		`$redis_cli -a $pass -h $target_ip config set requirepass ''`;
+                foreach my $k (@key){
+                	chomp($k);
+        	        my $info=`$redis_cli -a $pass -h $host MIGRATE $t_ip $k  0 1000`;
+			print "slot $slot 迁移$k 到 $t_ip 数据:$info\n";
+               }
+	       #set slot
+	       my $s=`$redis_cli -a $pass -h $host  CLUSTER SETSLOT $slot NODE $node`;
+	       my $ss=`redis-cli -a $pass -h $target_ip  CLUSTER SETSLOT $slot NODE $node`;
+	       chomp($s);
+	       chomp($ss);
+	       print "通知$host $target_ip status:$s $ss\n";
+	       $set=1;
+	}
+}
+sub cluster_info{
+	my $result=`$redis_cli $_[0] -a $pass cluster info`;
+	print $result;
+}
+#打印集群节点信息
+sub cluster_node{
+	my $result=`$redis_cli $_[0] -a $pass cluster nodes`;
+	print $result;
+	
+}
+#创建集群
+sub create_cluster{
+        my $info= `$redis_cli -a $pass $_[0] `;
+		print "$redis_cli -a $pass $_[0] \n";
+	print $info;
+}
+#创建slave同步
+sub create_replicate{
+	#获取源主机ip 和端口，和slave ip
+	my @ips=split(/,/,$_[0]);
+	my $source_host_port=$ips[0];
+	my $backip=$ips[1];
+	if($backip =~ /(\d+\.\d+\.\d+\.\d+)(\s+)(\d+)/mg){
+		#修改slaveip 和port 格式
+		$backip="-h $1 -p $3";
+	}
+	#获取srouceip的nodeid 为创建主从做准备
+	$source_host_port=~s/ -p /:/g;
+	my $source_id=`$redis_cli -a $pass -h $ips[0] cluster nodes|grep myself|awk '{print \$1}'`;
+	chomp($source_id);
+	#设置主从
+	my $info=`$redis_cli -a $pass $backip CLUSTER REPLICATE $source_id`;
+	print "$redis_cli -a $pass -h $ips[0] cluster nodes|grep myself|awk '{print \$1}'\n$redis_cli -a $pass $backip CLUSTER REPLICATE $source_id\n";
+	print "将 $backip 添加为 $source_host_port 从status is $info\n";
+}
+#重新分片
+sub redis_reshard{
+        my $ip_con=`$redis_cli -a $pass -h $host  cluster nodes`;
+        chomp($ip_con);
+        if($ip_con eq ''){
+                print "$host con is error $ip_con \n";
+                exit;
+       	} 
+	my $ip;
+	my $slot;
+	if($_[0] =~ /\|/mig){
+		my @ip_slots=split(/\|/,$_[0]);
+		$host=$ip_slots[0];
+		$slot=$ip_slots[1];
+		my $master_num=`$redis_cli -a $pass -h $host cluster nodes|grep master|grep -v fail|wc -l`;
+		my @nodes=`$redis_cli -h $host -a $pass cluster nodes|grep master|grep -v fail|awk '{print \$1}'`;
+		chomp($master_num);
+		my @master_ip=`$redis_cli -a $pass -h $host cluster nodes|grep master|grep -v fail|awk '{print \$2}'|sort`;
+		my $n=int ($slot/$master_num);
+		#设置分片数组,每个ip分配的槽位多少
+		my $j;
+		my $nar;
+		my $ip_slot;
+		my $m=0;
+		for($j=1;$j<=$master_num;$j++){
+			$nar=($n*$j);
+			my $start=($m*$n);
+			#定义ip 和slot组成一个单元,供后续设置slot使用
+			chomp($master_ip[$m]);
+			$ip_slot.="$master_ip[$m]|$nar".',';
+			$m++;
+			print "$m ffff \n";
+		}
+		chop($ip_slot);
+		my $e=0;
+		my $i=0;
+		#设置分片如:redis-cli -h 172.16.40.15 -p 7000 -a vooleredis cluster addslots 0 1 2 3
+		my @ip_slots=split(/,/,$ip_slot);
+		#根据ip和分片进行格式化
+		foreach my $key (@ip_slots){
+			my @s=split(/\|/,$key);
+			my $slot=$s[1];
+			my $ip=$s[0];
+			chomp($slot);
+			chomp($ip);
+			my $i;
+			my $slots;
+			for($i=$e;$i<=$slot;$i++){
+				$slots.=$i.' ';
+				$e++;
+			}
+			$ip=~s/:/ -p /g;
+			my $info=`$redis_cli  -a $pass -h $ip  cluster addslots $slots`;
+			print "$ip 设置分片 状态:$info\n";
+		}
+	}else{
+		print "$host\n";
+		my $i=1;
+		my $en=16384;
+		my @nodes=`$redis_cli -h $host -a $pass cluster nodes|grep master|grep -v fail|awk '{print \$1}'`;
+		my $num=@nodes;
+		chomp($num);
+		my $n=int ($en/$num);
+		my $j=0;
+		my $set;
+		my $chost;
+		my $cport;
+		my $cnode;
+		foreach my $node (@nodes){
+			chomp($node);
+			$cnode=$node;
+			my $set=$n*$i;
+			my @hosts=`$redis_cli -h $host -a $pass cluster nodes |grep master|grep -v fail|awk '{print \$2}'`;
+			while ($j < $set ){
+				foreach my $keys (@hosts){
+					my @hosts=split(/:/,$keys);
+					my $host=$hosts[0];
+					my $port=$hosts[1];
+					chomp($host);
+					chomp($port);
+					$chost=$host;
+					$cport=$port;
+					my $info=`$redis_cli -h $host -p $port  -a $pass CLUSTER SETSLOT $j NODE $node`;
+		          	print "auto Resharding :$j   $info \n";
+				}
+				$j++;
+			}
+			$i++;
+		}
+		if($j <=16383 ){
+			my $cha=16383 - $j;
+			while($cha < 16384){
+				    my $info=`$redis_cli -h $chost -p $cport  -a $pass CLUSTER SETSLOT $cha NODE $cnode`;
+                    print "auto Resharding :$cha $info \n";
+					$cha++;
+
+			}
+		}
+		
+	}	
+}
+
+###########
+sub add{
+	my @ips=split(/,/,$host);
+	my $target_ip=$ips[1];
+	chomp($target_ip);
+	$target_ip=~s/ -p / /g;
+	my $host=$ips[0];
+	my $info= `$redis_cli -h $host -a $pass cluster meet $target_ip`;
+	chomp($info);
+	print "$redis_cli -h $host -a $pass cluster meet $target_ip 将$target_ip 添加$ips[0] 集群状态:$info\n";
+}
+sub del{
+	my $info=`$redis_cli  -h $host -a $pass CLUSTER FORGET $node`;
+	print "$host 删除节点$node 状态:$info\n";
+
+}
+sub add_slave{
+        my $info=`$redis_cli  -h $host -a $pass cluster replicate $node`;
+	chomp($info);
+        print "将$host 设置为$node 的从 :$info \n";
+}
+sub up_master{
+	my $m_id=`$redis_cli -h $host -a $pass cluster nodes|grep $host_in|awk '{print \$4}'`;
+	chomp($m_id);
+	my $m_ip=`$redis_cli -h $host -a $pass cluster nodes|grep '^$m_id'|awk '{print \$2}'`;
+	chomp($m_ip);
+	my $info = `$redis_cli  -h $host -a $pass  CLUSTER FAILOVER `;
+	chomp($info);	
+	print "将$host 提升为master $info ,原Master 为$m_ip \n";
+}
+sub print_usage{
+	print color 'bold blue'; print  <<EOF;
++------------------------------------------------------------------------+
+|Redis Cluster Tool for Redis Cluster					 |
+|version:V1.1 2016/09/12   支持Redis Cluster 密码    			 |
+|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用        |
+|			欢迎使用Redis Cluster Tool 工具	                 |
++------------------------------------------------------------------------+
+options :
+                'help',         # 帮助
+                't',            # 设置参数:
+				ms:移动slot,reshard 重新分片,
+				del:删除节点,
+				add:添加节点,
+				add_slave:添加slave,
+				up:升级slave,
+				create:创建集群,注意主从分别为不同物理机
+				up:升级
+				info:集群信息
+				nodes:集群节点信息
+                'h',            # 主机host:如
+				-h 1.1.1.1:port ,
+				多个主机时:-h '1.1.1.1:port,2.2.2.2:port'用','隔开  
+                'p',            # 端口
+                'n',            # node 节点,如: -n 'id' 如果2个时,-n 'source-id,destion-id'
+                'r',              #指定slot 范围,如:-r 0-16383
+                'b',            #指定backup 地址:如 -b ip:port,-b 'ip:port,ip2:port2'
+
+Sample :
+	
+	redis_cluster_tool -t nodes -h host:port
+	#查看集群节点信息
+	redis_cluster_tool -t info -h host:port
+	#查看集群信息
+	redis_cluster_tool -t create -h 'host1:port1,host2:port2,host3:port3' -b 'backip1:port1,backip2:port2,backip3:port3'
+	#创建集群,并自动根据不同物理ip配置主从关系,尽量根据对应关系来进行创建如:host1:port1 对应的备份关系为backip1:port1
+	#并在创建完集群后自动进行根据master个数分片
+	redis_cluster_tool -t reshard -h host:port
+	#自动根据当前master 进行将16384 进行重新分片,注意在集群创建初化时进行,当线上重新分配，其中的slot会有短暂中断情况
+	#可以先人工计算，然后将slot以迁移方式进行	
+	redis_cluster_tool -t ms -h host:port -n node_id -r 0-16383
+	#对slot进行迁移,将0-16383范围内的host:prot 的slot迁移到 nodeid 为 -n指定的节点
+	redis_cluster_tool -t del -h host:port -n  node_id 
+	#在host:port 中删除删除节点id
+	redis_cluster_tool -t add -h source_host:source_port,target_host:target_port 
+	# 添加节点到source_host:port 中
+	redis_cluster_tool -t add_slave -h host:port -n node_id
+	#添加slave节点:将node_id 节点添加到host中
+	redis_cluster_toole -t up  -h host:port
+	#将host和port实例升级weimaster
+EOF
+print color 'reset'; 
+exit; 
+}
