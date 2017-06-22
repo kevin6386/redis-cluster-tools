@@ -46,6 +46,6 @@
 	redis_cluster_toole -t up  -h host:port
 	#将host和port实例升级weimaster
 	
-	
+  使用
 	编辑程序redis_cluster_tool	
 	my $pass='redis';#设置密码
