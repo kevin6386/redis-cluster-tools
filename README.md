@@ -1,8 +1,8 @@
 +------------------------------------------------------------------------+
-|Redis Cluster Tool for Redis Cluster					                 |
-|version:V1.1 2016/09/12   支持Redis Cluster 密码    			             |
-|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用               |
-|			欢迎使用Redis Cluster Tool 工具	                             |
+|Redis Cluster Tool for Redis Cluster					  |
+|version:V1.1 2016/09/12   支持Redis Cluster 密码    		       |
+|只是对Redis Cluster 原生命令进行封装和计算,没有其他改动,放心使用             |
+|			欢迎使用Redis Cluster Tool 工具	             |
 +------------------------------------------------------------------------+
 options :
                 'help',         # 帮助
