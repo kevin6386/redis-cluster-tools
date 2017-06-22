@@ -45,3 +45,7 @@
 	#添加slave节点:将node_id 节点添加到host中
 	redis_cluster_toole -t up  -h host:port
 	#将host和port实例升级weimaster
+	
+	
+编辑程序redis_cluster_tool
+my $pass='redis';#设置密码
